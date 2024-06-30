@@ -47,9 +47,15 @@ BRIGHTNESS EQU 0x11			;current brightness value used in the pwm loop
 WANTED_BRIGHTNESS EQU 0x12	;wanted brightness set by update_logic routine
 UPDATE_DELAY_COUNTER EQU 0x13; ;counter to 8 to get about 60 updates per second for logic
 WAIT_TILL_TIMER_VAR EQU 0x14	;for wait_till_timer_value the time to wait
+MODE EQU 0x15				;current mode, aka which sample is running
+MODE_TMP EQU 0x16				;tmp var for the switch
+BUTTON_DEBOUNCE_COUNTER EQU 0x17		;button debounce counter
 
 ;***** FLAGS DEFINITIONS
 OUT_FLAG	EQU		0x01	;UNUSED
+
+;***** CONSTANTS
+MODES_COUNT EQU 0x03		;how many modes we have, mode 0 means sleep
 
 
 
@@ -67,18 +73,30 @@ OUT_FLAG	EQU		0x01	;UNUSED
 
 init
 	clrwdt
-	movlw	B'00000010'		;enable GPPU & GPWU, assign prescaler to Timer0 and set ratio to 1:8
+	movlw	B'01000010'		;enable GPWU, assign prescaler to Timer0 and set ratio to 1:8
 	option					;load options
 	clrf 	GPIO			;set all output to low
 	movlw	B'00001110'		;setup only gpio0 to output
 	tris 	6				;load gpio options
 	clrf TMR0				;reset timer
 
+	;init all vars
 	movlw 0x8				
-	movwf UPDATE_DELAY_COUNTER ; init UPDATE_DELAY_COUNTER to 8	
+	movwf UPDATE_DELAY_COUNTER
+
 	movlw 0x0	
 	movwf BRIGHTNESS 
 	movwf WANTED_BRIGHTNESS
+	movwf BUTTON_DEBOUNCE_COUNTER
+
+	movlw MODES_COUNT
+	movwf MODE				;mode is MODES_COUNT because we will need to call button_detected which will decrease it to a valid value
+
+
+	btfss STATUS, GPWUF		;skip sleep if GPWUF is set, because that means we woke up due to button
+	sleep
+	call button_detected
+
 
 	;bsf GPIO, GP0			;turn on led
 	;bcf GPIO, GP0			;turn off led
@@ -103,10 +121,12 @@ brightness_non_zero
 brightness_low
 	call wait_till_timer_brightness
 	bcf GPIO, GP0			;turn off led
+	call detect_button
 	call update_logic
 	goto end_pwm_loop
 
 brightness_high
+	call detect_button
 	call update_logic
 	call wait_till_timer_brightness
 	bcf GPIO, GP0			;turn off led
@@ -116,6 +136,10 @@ end_pwm_loop
 	movlw 0xff
 	call wait_till_timer_value
 	goto pwm_loop
+
+
+
+; only methods below this point
 
 
 
@@ -141,9 +165,57 @@ update_logic
 	;here we have the actual update_logic which is called every 8th time, meaning about 60fps
 	movlw 0x8				
 	movwf UPDATE_DELAY_COUNTER ;reset to 8
+	
+	movf MODE, 0			;load current mode
+	movwf MODE_TMP			;save current mode into mode_tmp so we can modify it
 
+	decf MODE_TMP, 1		;dec mode, if now 0 we know it has to be mode_1
+	btfsc STATUS, Z			;skip the next goto if we have not reached 0
+	goto mode_1
+
+	decf MODE_TMP, 1		;dec mode, if now 0 we know it has to be mode_2
+	btfsc STATUS, Z			;skip the next goto if we have not reached 0
+	goto mode_2
+	
+	retlw 0					;unknown mode, return
+
+mode_1
 	incf WANTED_BRIGHTNESS, 1 ;inc WANTED_BRIGHTNESS as only logic for now
+	retlw 0
 
+mode_2
+	decf WANTED_BRIGHTNESS, 1 ;dec WANTED_BRIGHTNESS as only logic for now
+	retlw 0
+
+
+detect_button
+	btfsc GPIO, GP1		;we skip the return if we read a 0 because button is active-low
+	retlw 0
+
+button_detected
+	bcf GPIO, GP0			;turn off led
+
+	;debounce here
+	;delay function
+	movlw 0x255
+	call wait_till_timer_value
+	decfsz BUTTON_DEBOUNCE_COUNTER, 1	;exit the loop when we reach 0
+	goto $-3
+
+	btfss GPIO, GP1		;we loop until we read a 1, which means button is let go
+	goto $-1
+
+
+	;delay function
+	movlw 0x255
+	call wait_till_timer_value
+	decfsz BUTTON_DEBOUNCE_COUNTER, 1	;exit the loop when we reach 0
+	goto $-3
+
+	;debounce done
+	decfsz MODE,1		;dec mode, skip return if we reach 0 == sleep
+	retlw 0
+	sleep				;we reached mode 0, so go to sleep for now
 
 
 	END                       ; directive 'end of program'

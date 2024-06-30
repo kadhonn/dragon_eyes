@@ -1,15 +1,30 @@
 
 need timer scaler 1:8 to hopefully reliable wait for it
+do not use internal pullups, they leak too much current
+
+
+gpios:
+GPIO0 = output leds
+GPIO1 = input button with external 100kOhm pull-up, this means active_low aka pressed = low/0
+
+MODES_COUNT = 3 //count of different modes we have. mode 0 == sleep needs to be counted as well
 
 vars: 
 brightness 0-255 = 0
 wanted_brightness 0-255 = 0
 update_delay_counter 0-8 = 8
+mode 1-(MODES_COUNT) = MODES_COUNT
+button_debounce_counter 0-8 = 8
 
 
 init:
-//obvious
-
+brightness + wanted_brightness = 0
+update_delay_counter = 8 // really? maybe we want an updateLogic immediatelly? TODO check how this works with button init
+if is_initial_start //if we get power we do not want to start up, we go to sleep immediatelly and wait for a buttonpress
+	sleep
+else
+	button_detected()
+endif
 
 loop:
 
@@ -22,8 +37,10 @@ else
 	turn on lamp
 	if brightness < 128 //aka bit 0 of brightness == 0
 		waitTillLampOff()
+		detect_button()
 		updateLogic()
 	else
+		detect_button()
 		updateLogic()
 		waitTillLampOff()
 	endif
@@ -54,4 +71,27 @@ endif
 update_delay_counter = 8
 
 //actual logic happens here
-wanted_brightness++ //for now
+if mode == 1
+	wanted_brightness++ //for now
+else if mode == 2
+	wanted_brightness-- //for now
+endif
+
+
+
+
+
+detect_button:
+if !button is pressed
+	return
+else
+	//falltrough to below
+endif
+button_detected:
+8 times waitTillTimerValue(255)
+wait_till_button_unpressed
+8 times waitTillTimerValue(255)
+dec mode
+if mode == 0
+	sleep //mode reset will happen on startup
+endif
