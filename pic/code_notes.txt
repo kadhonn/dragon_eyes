@@ -1,0 +1,57 @@
+
+need timer scaler 1:8 to hopefully reliable wait for it
+
+vars: 
+brightness 0-255 = 0
+wanted_brightness 0-255 = 0
+update_delay_counter 0-8 = 8
+
+
+init:
+//obvious
+
+
+loop:
+
+
+pwm_loop:
+load wanted_brightness into brightness
+if brightness zero
+	updateLogic()
+else 
+	turn on lamp
+	if brightness < 128 //aka bit 0 of brightness == 0
+		waitTillLampOff()
+		updateLogic()
+	else
+		updateLogic()
+		waitTillLampOff()
+	endif
+endif
+waitTillTimerValue(255)
+goto pwm_loop
+
+
+waitTillLampOff:
+waitTillTimerValue(brightness)
+turn off lamp
+
+
+
+waitTillTimerValue(value)
+// has to be less then 8 cycles!
+
+
+
+//is called about 490 times per second, we should make a count to 8 before updates to have ~60 frames. IS DEPENDENT ON timer scaler
+//has to be less then 128 * 8 cycles!
+updateLogic:
+update_delay_counter--
+if update_delay_counter != 0
+	ret
+endif
+
+update_delay_counter = 8
+
+//actual logic happens here
+wanted_brightness++ //for now
