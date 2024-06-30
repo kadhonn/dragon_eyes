@@ -1,0 +1,1 @@
+small fun project with an pic10f200 to make some leds blink
