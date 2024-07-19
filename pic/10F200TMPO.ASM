@@ -51,11 +51,35 @@ MODE EQU 0x15				;current mode, aka which sample is running
 MODE_TMP EQU 0x16				;tmp var for the switch
 BUTTON_DEBOUNCE_COUNTER EQU 0x17		;button debounce counter
 
+MODE_1 EQU 0x1A		;vars for modes to use
+MODE_2 EQU 0x1B
+MODE_3 EQU 0x1C
+MODE_4 EQU 0x1D
+MODE_5 EQU 0x1E
+MODE_6 EQU 0x1F
+
+;***** specific var names for modes
+UPPER_POS EQU MODE_1	;upper and lower values for pos (aka 16 bit var)
+LOWER_POS EQU MODE_2
+UPPER_SPEED EQU MODE_3	;upper and lower values for speed (aka 16 bit var)
+LOWER_SPEED EQU MODE_4
+ACC EQU MODE_5			;acceleration for speed
+
+
 ;***** FLAGS DEFINITIONS
-OUT_FLAG	EQU		0x01	;UNUSED
+MODE_NEEDS_INIT	EQU		0x00	;if the mode needs to initialize, aka button was pressed and mode switched
+MODE_FLAG_1 EQU 0x04	;flags for modes to use
+MODE_FLAG_2 EQU 0x05
+MODE_FLAG_3 EQU 0x06
+MODE_FLAG_4 EQU 0x07
+
+
+;***** specific flag names for modes
+ACC_UP EQU MODE_FLAG_1
 
 ;***** CONSTANTS
 MODES_COUNT EQU 0x03		;how many modes we have, mode 0 means sleep
+
 
 
 
@@ -179,13 +203,52 @@ update_logic
 	
 	retlw 0					;unknown mode, return
 
-mode_1
-	incf WANTED_BRIGHTNESS, 1 ;inc WANTED_BRIGHTNESS as only logic for now
+mode_1 ;fast pulse
+	movlw .16
+	goto generic_pulse
+mode_2 ;slow pulse
+	movlw .4
+	;goto generic_pulse
+
+generic_pulse
+	movwf ACC
+	btfss FLAGS, MODE_NEEDS_INIT ;if MODE_NEEDS_INIT is set, we skip the skip
+	goto generic_pulse_after_init
+	
+	;initialize mode
+	movlw 0
+	movwf LOWER_POS
+	movwf UPPER_SPEED
+	movwf LOWER_SPEED
+	movlw .40
+	movwf UPPER_POS
+	bcf FLAGS, MODE_NEEDS_INIT ;reset MODE_NEEDS_INIT flag
+generic_pulse_after_init
+	movf ACC, 0 ;load acc to w, should be preserved throught the if below
+	btfss UPPER_POS, 7 ;test the most significant bit of UPPER_POS, if set we want to slow down
+	goto generic_pulse_speed_up
+	;goto generic_pulse_slow_down
+generic_pulse_slow_down
+	subwf LOWER_SPEED, 1
+	btfss STATUS, C ;if C is set we DO NOT need to carry, since borrow is negated...
+	decf UPPER_SPEED, 1
+	goto generic_pulse_move
+generic_pulse_speed_up
+	addwf LOWER_SPEED, 1
+	btfsc STATUS, C ;if C is set we need to carry
+	incf UPPER_SPEED, 1 
+generic_pulse_move
+	movf LOWER_SPEED, 0 ;load lower_speed to w 
+	addwf LOWER_POS, 1 ;add to lower_pos and store
+	btfsc STATUS, C ;if C is set we need to carry
+	incf UPPER_POS, 1
+	movf UPPER_SPEED, 0 ;load upper_speed to w
+	addwf UPPER_POS, 1 ;add to upper_pos and store
+generic_pulse_end
+	movf UPPER_POS, 0	;now use UPPER_POS as wanted_brightness
+	movwf WANTED_BRIGHTNESS
 	retlw 0
 
-mode_2
-	decf WANTED_BRIGHTNESS, 1 ;dec WANTED_BRIGHTNESS as only logic for now
-	retlw 0
 
 
 detect_button
@@ -194,6 +257,7 @@ detect_button
 
 button_detected
 	bcf GPIO, GP0			;turn off led
+	bsf FLAGS, MODE_NEEDS_INIT ;tell modes to init themselves
 
 	;debounce here
 	;delay function

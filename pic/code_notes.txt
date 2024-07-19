@@ -10,11 +10,27 @@ GPIO1 = input button with external 100kOhm pull-up, this means active_low aka pr
 MODES_COUNT = 3 //count of different modes we have. mode 0 == sleep needs to be counted as well
 
 vars: 
+flags 
 brightness 0-255 = 0
 wanted_brightness 0-255 = 0
 update_delay_counter 0-8 = 8
 mode 1-(MODES_COUNT) = MODES_COUNT
 button_debounce_counter 0-8 = 8
+
+flags:
+mode_needs_init = 0 //if the mode has to init itself, aka button was pressed
+mode_flag_1 = 4 //flags modes can use, should have specific names per mode
+mode_flag_2 = 5
+mode_flag_3 = 6
+mode_flag_4 = 7
+
+6 variables for modes to use. should have specific names and generic names per mode for resetting them on button press.
+mode_1
+mode_2
+mode_3
+mode_4
+mode_5
+mode_6
 
 
 init:
@@ -71,12 +87,64 @@ endif
 update_delay_counter = 8
 
 //actual logic happens here
-if mode == 1
-	wanted_brightness++ //for now
-else if mode == 2
+if mode == 1 //fast pulse
+	//vars
+	//mode_1 = upper_pos
+	//mode_2 = lower_pos
+	//mode_3 = upper_speed
+	//mode_4 = lower_speed
+	//mode_5 = acc
+	//flags
+	//mode_flag_1 = acc_up TODO really needed?
+	
+	acc = 16
+	goto generic_pulse
+		
+	
+	
+	
+	
+	
+else if mode == 2 //slow pulse
+
+
+	//is exactly like mode 1 (fast pulse) but acc = 4
+	
+	
+	
+	
+else if mode == 3 //random pulse
+
+
+
 	wanted_brightness-- //for now
+	
+	
+	
 endif
 
+
+
+generic_pulse:
+if(needsinit){
+	upper_pos = 40 //to have some wiggle room, prevent overflow and don't use the max values
+	lower_pos = 0
+	upper_speed = 0
+	lower_speed = 0
+	reset mode_needs_init flag
+}
+if(upper_pos < 128){
+	lower_speed += acc
+	carry to upper_speed
+else
+	lower_speed -= acc
+	carry to upper_speed
+endif
+lower_pos += lower_speed
+carry to upper_pos
+upper_pos += upper_speed
+wanted_brightness = upper_pos
+ret
 
 
 
@@ -88,6 +156,8 @@ else
 	//falltrough to below
 endif
 button_detected:
+turn off led
+set mode_needs_init flag
 8 times waitTillTimerValue(255)
 wait_till_button_unpressed
 8 times waitTillTimerValue(255)
