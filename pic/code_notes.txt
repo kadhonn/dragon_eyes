@@ -94,8 +94,6 @@ if mode == 1 //fast pulse
 	//mode_3 = upper_speed
 	//mode_4 = lower_speed
 	//mode_5 = acc
-	//flags
-	//mode_flag_1 = acc_up TODO really needed?
 	
 	acc = 16
 	goto generic_pulse
@@ -114,12 +112,26 @@ else if mode == 2 //slow pulse
 	
 	
 else if mode == 3 //random pulse
-
-
-
-	wanted_brightness-- //for now
+	//vars
+	//mode_1 = state
+	//mode_2 = count
+	//mode_3 = tmp_state (needed in assembly to get the bits out)
+	//mode_4 = rnd_brightness = 128
 	
+	if(needsinit){
+		state = time? some counter? 1?
+	}
 	
+	for(count = 0; i<4;i++){
+		state = state<<1 | ((state>>7 ^ state>>5 ^ state>>4 ^ state>>3) & 1)
+	}
+	
+	if(state[4] == 1){
+		rnd_brightness += state[0..3] //aka the lower 3 bytes
+	else
+		rnd_brightness -= state[0..3] //aka the lower 3 bytes
+	
+	wanted_brightness = state
 	
 endif
 

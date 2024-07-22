@@ -59,12 +59,18 @@ MODE_5 EQU 0x1E
 MODE_6 EQU 0x1F
 
 ;***** specific var names for modes
+;vars for mode 1 & 2 (fast and slow pulse)
 UPPER_POS EQU MODE_1	;upper and lower values for pos (aka 16 bit var)
 LOWER_POS EQU MODE_2
 UPPER_SPEED EQU MODE_3	;upper and lower values for speed (aka 16 bit var)
 LOWER_SPEED EQU MODE_4
 ACC EQU MODE_5			;acceleration for speed
 
+;vars for mode 3 (random pulse)
+STATE EQU MODE_1
+COUNT EQU MODE_2
+TMP_STATE EQU MODE_3
+RND_BRIGHTNESS EQU MODE_4
 
 ;***** FLAGS DEFINITIONS
 MODE_NEEDS_INIT	EQU		0x00	;if the mode needs to initialize, aka button was pressed and mode switched
@@ -78,7 +84,7 @@ MODE_FLAG_4 EQU 0x07
 ACC_UP EQU MODE_FLAG_1
 
 ;***** CONSTANTS
-MODES_COUNT EQU 0x03		;how many modes we have, mode 0 means sleep
+MODES_COUNT EQU 0x04		;how many modes we have, mode 0 means sleep
 
 
 
@@ -115,7 +121,8 @@ init
 
 	movlw MODES_COUNT
 	movwf MODE				;mode is MODES_COUNT because we will need to call button_detected which will decrease it to a valid value
-
+	
+	movwf FLAGS
 
 	btfss STATUS, GPWUF		;skip sleep if GPWUF is set, because that means we woke up due to button
 	sleep
@@ -200,6 +207,10 @@ update_logic
 	decf MODE_TMP, 1		;dec mode, if now 0 we know it has to be mode_2
 	btfsc STATUS, Z			;skip the next goto if we have not reached 0
 	goto mode_2
+
+	decf MODE_TMP, 1		;dec mode, if now 0 we know it has to be mode_3
+	btfsc STATUS, Z			;skip the next goto if we have not reached 0
+	goto mode_3
 	
 	retlw 0					;unknown mode, return
 
@@ -249,6 +260,53 @@ generic_pulse_end
 	movwf WANTED_BRIGHTNESS
 	retlw 0
 
+
+mode_3 ;random pulse
+	btfss FLAGS, MODE_NEEDS_INIT ;if MODE_NEEDS_INIT is set, we skip the skip
+	goto mode_3_after_init
+	
+	;initialize mode
+	movlw .1
+	movwf STATE ;init state with 1 for now, maybe we want something more random? probably we don't need though
+	movlw .128
+	movwf RND_BRIGHTNESS
+	bcf FLAGS, MODE_NEEDS_INIT ;reset MODE_NEEDS_INIT flag
+mode_3_after_init
+	movlw .4 ;init counter with 5 because we want to loop and generate 5 new bits
+	movwf COUNT
+mode_3_loop_start ;one loop generates 1 new random bit. this is done with this: https://en.wikipedia.org/wiki/Linear-feedback_shift_register and the given polynom for 8 bits x^{8}+x^{6}+x^{5}+x^{4}+1
+	movf STATE, 0
+	movwf TMP_STATE
+	movlw .0 ;init W with zero
+	rrf TMP_STATE ;bit 1 at place 0
+	rrf TMP_STATE ;bit 2 at place 0
+	rrf TMP_STATE ;bit 3 at place 0!
+	xorwf TMP_STATE, 0
+	rrf TMP_STATE ;bit 4 at place 0!
+	xorwf TMP_STATE, 0
+	rrf TMP_STATE ;bit 5 at place 0!
+	xorwf TMP_STATE, 0
+	rrf TMP_STATE ;bit 6 at place 0
+	rrf TMP_STATE ;bit 7 at place 0!
+	xorwf TMP_STATE, 0	;now at bit 0 we have our new bit
+	andlw .1 ;and with 1 to now have 0 or 1 in our W register, which is our new bit
+	bcf STATUS, C ;clear carry to 0. we will reset the carry if Z is not set, so we can shift the new bit into STATE
+	btfsc STATUS, Z	;if the Z flag is set we have 0 as a new bit, which means we skip setting the C flag
+	bsf STATUS, C
+	rlf STATE
+
+	decfsz COUNT, 1
+	goto mode_3_loop_start
+mode_3_after_loop
+	movf STATE, 0 ;now after the loop state is our new random number, so load it into wanted_brightness
+	andlw B'00000111' ;we only want the lower bits as delta, we test the +/- bit directly
+	btfsc STATE, 3 ;this bit means + or -
+	addwf RND_BRIGHTNESS, 0 ;add the lower 3 bits to our random brightness
+	btfss STATE, 3 ;this bit means + or -
+	subwf RND_BRIGHTNESS, 0 ;subtract the lower 3 from our random brightness
+	movwf RND_BRIGHTNESS
+	movwf WANTED_BRIGHTNESS
+	retlw 0
 
 
 detect_button
